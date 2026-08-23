@@ -28,7 +28,7 @@ std::string PortScanner::hexToIp(const std::string& hex, bool is_ipv6) {
     if (hex.length() != 8) return "invalid";
     
     try {
-        uint32_t ip = std::stoul(hex, nullptr, 16);
+        uint32_t ip = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
         unsigned char bytes[4];
         bytes[0] = (ip >> 0) & 0xFF;
         bytes[1] = (ip >> 8) & 0xFF;
@@ -46,7 +46,7 @@ std::string PortScanner::hexToIp(const std::string& hex, bool is_ipv6) {
 
 uint16_t PortScanner::hexToPort(const std::string& hex) {
     try {
-        return std::stoul(hex, nullptr, 16);
+        return static_cast<uint16_t>(std::stoul(hex, nullptr, 16));
     } catch (...) {
         return 0;
     }
@@ -54,7 +54,7 @@ uint16_t PortScanner::hexToPort(const std::string& hex) {
 
 std::string PortScanner::stateToString(const std::string& hex) {
     try {
-        int state = std::stoul(hex, nullptr, 16);
+        int state = static_cast<int>(std::stoul(hex, nullptr, 16));
         switch(state) {
             case 0x01: return "ESTABLISHED";
             case 0x02: return "SYN_SENT";
@@ -203,7 +203,7 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         std::cerr << "Warning: Cannot open " << path << std::endl;
         return connections;
     }
-
+    
     if (!cache_built) {
         buildProcessCache();
     }
@@ -219,16 +219,13 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         
         if (line.empty()) continue;
         
-        std::istringstream iss(line);
-        std::string sl, local_addr, remote_addr, st, tx_queue, rx_queue;
-        std::string tr, tm, retrnsmt, uid, timeout, inode;
+        std::string local_addr, remote_addr, st, uid, inode;
         
-        if (!(iss >> sl >> local_addr >> remote_addr >> st >> tx_queue >> rx_queue 
-              >> tr >> tm >> retrnsmt >> uid >> timeout >> inode)) {
+        // adaptive parsing
+        if (!parseProcNetLine(line, local_addr, remote_addr, st, uid, inode)) {
             continue;
         }
         
-        // DEMOLISH THE HELL OUT OF local_address:port
         size_t colon_pos = local_addr.find(':');
         if (colon_pos == std::string::npos) continue;
         
@@ -247,12 +244,16 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         uint32_t uid_num = 0;
         try {
             uid_num = std::stoul(uid);
-        } catch (...) {}
+        } catch (...) {
+            continue;
+        }
         
         uint64_t inode_num = 0;
         try {
             inode_num = std::stoull(inode);
-        } catch (...) {}
+        } catch (...) {
+            continue;
+        }
         
         // get process name via cache
         std::string process = "unknown";
@@ -266,6 +267,53 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
     
     file.close();
     return connections;
+}
+
+bool PortScanner::parseProcNetLine(const std::string& line, 
+                                   std::string& local_addr,
+                                   std::string& remote_addr,
+                                   std::string& state,
+                                   std::string& uid,
+                                   std::string& inode) {
+    if (line.empty()) return false;
+    
+    // split the string into tokens
+    std::istringstream iss(line);
+    std::vector<std::string> tokens;
+    std::string token;
+    
+    while (iss >> token) {
+        tokens.push_back(token);
+    }
+    
+    // min number os tokens(confirmed by kernel docs) 
+    // sl, local_addr, remote_addr, st, tx_queue, rx_queue, 
+    // tr, tm->when, retrnsmt, uid, timeout, inode
+    if (tokens.size() < 12) {
+        return false;
+    }
+    
+    // tokens are on fixated positions(confirmed by kernel docs)
+    // 0: sl
+    // 1: local_address
+    // 2: remote_address
+    // 3: st (state)
+    // 4: tx_queue:rx_queue
+    // 5: tr (timer)
+    // 6: tm->when
+    // 7: retrnsmt
+    // 8: uid
+    // 9: timeout
+    // 10: inode
+    // 11+: refcnt, flags, etc. (ignore)
+    
+    local_addr = tokens[1];
+    remote_addr = tokens[2];
+    state = tokens[3];
+    uid = tokens[8];
+    inode = tokens[10];
+    
+    return true;
 }
 
 std::vector<ConnectionInfo> PortScanner::getAllTcpConnections(bool include_ipv6) {

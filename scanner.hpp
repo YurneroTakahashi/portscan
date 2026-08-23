@@ -22,6 +22,13 @@ private:
     void buildProcessCache();
     
     std::vector<ConnectionInfo> parseProtocolFile(const std::string& path, bool is_ipv6);
+
+    bool parseProcNetLine(const std::string& line, 
+                      std::string& local_addr,
+                      std::string& remote_addr,
+                      std::string& state,
+                      std::string& uid,
+                      std::string& inode);
     
 public:
     PortScanner();
