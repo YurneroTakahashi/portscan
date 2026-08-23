@@ -304,14 +304,14 @@ bool PortScanner::parseProcNetLine(const std::string& line,
     // 7: retrnsmt
     // 8: uid
     // 9: timeout
-    // 10: inode
-    // 11+: refcnt, flags, etc. (ignore)
+    // 10+: refcnt, flags, etc. (ignore)
+    // last: inode(ALWAYS!!!!!!)
     
     local_addr = tokens[1];
     remote_addr = tokens[2];
     state = tokens[3];
     uid = tokens[8];
-    inode = tokens[10];
+    inode = tokens.back();
     
     return true;
 }
