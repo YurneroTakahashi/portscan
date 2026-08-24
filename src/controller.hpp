@@ -17,7 +17,7 @@ public:
     void refresh(bool include_ipv6 = true);
 
 
-    std::vector<ConnectionInfo> getAll() const;
+    std::vector<ConnectionInfo>& getAll() const;
     
     std::vector<ConnectionInfo> getListening() const;
     

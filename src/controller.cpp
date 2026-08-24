@@ -10,7 +10,7 @@ void PortController::refresh(bool include_ipv6) {
     current_connections = scanner.getAllTcpConnections(include_ipv6);
 }
 
-std::vector<ConnectionInfo> PortController::getAll() const {
+std::vector<ConnectionInfo>& PortController::getAll() const {
     return current_connections;
 }
 
