@@ -22,4 +22,20 @@ struct ConnectionInfo {
           process_name(proc), is_ipv6(ipv6) {}
 };
 
+struct RawConnection {
+    std::string local_addr;
+    std::string remote_addr;
+    std::string state_hex;    // сырое значение состояния (например, "0A")
+    std::string uid;
+    std::string inode_str;
+    std::string ip_hex;
+    std::string port_hex;
+    uint16_t port;
+    bool is_ipv6;
+    uint64_t inode;
+    
+    RawConnection() : port(0), is_ipv6(false), inode(0) {}
+};
+
+
 #endif // MODEL_HPP

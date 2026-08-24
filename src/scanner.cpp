@@ -308,8 +308,12 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
     
     std::string line;
     bool is_header = true;
+    
+    // raw_vault
+    std::vector<RawConnection> raw_connections;
     std::vector<uint64_t> inodes_found;
     
+    // ONLY ONE cycle through file, where we collect everything we need for both
     while (std::getline(file, line)) {
         if (is_header) {
             is_header = false;
@@ -318,6 +322,7 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         
         if (line.empty()) continue;
         
+        // do i even need to doc this?
         std::string local_addr, remote_addr, st, uid, inode_str;
         if (!parseProcNetLine(line, local_addr, remote_addr, st, uid, inode_str)) {
             continue;
@@ -341,73 +346,50 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         } catch (...) {
             continue;
         }
+        
+        // i like them data RAAAW
+        RawConnection raw;
+        raw.local_addr = local_addr;
+        raw.remote_addr = remote_addr;
+        raw.state_hex = st;
+        raw.uid = uid;
+        raw.inode_str = inode_str;
+        raw.ip_hex = ip_hex;
+        raw.port_hex = port_hex;
+        raw.port = port;
+        raw.is_ipv6 = is_ipv6;
+        raw.inode = inode_num;
+        raw_connections.push_back(raw);
         
         inodes_found.push_back(inode_num);
     }
     
-    // Обновляем кэш ТОЛЬКО для найденных inode
+    file.close();
     if (!inodes_found.empty()) {
         updateCacheForInodes(inodes_found);
     }
     
-    // Второй проход: собираем полную информацию
-    file.clear();
-    file.seekg(0, std::ios::beg);
-    is_header = true;
-    
-    while (std::getline(file, line)) {
-        if (is_header) {
-            is_header = false;
-            continue;
-        }
-        
-        if (line.empty()) continue;
-        
-        std::string local_addr, remote_addr, st, uid, inode_str;
-        if (!parseProcNetLine(line, local_addr, remote_addr, st, uid, inode_str)) {
-            continue;
-        }
-        
-        size_t colon_pos = local_addr.find(':');
-        if (colon_pos == std::string::npos) continue;
-        
-        std::string ip_hex = local_addr.substr(0, colon_pos);
-        std::string port_hex = local_addr.substr(colon_pos + 1);
-        
-        if (is_ipv6 && ip_hex.length() != 32) continue;
-        if (!is_ipv6 && ip_hex.length() != 8) continue;
-        
-        uint16_t port = hexToPort(port_hex);
-        if (port == 0) continue;
-        
-        std::string ip = hexToIp(ip_hex, is_ipv6);
-        std::string state = stateToString(st);
+    // second cycle we use the raw data co get connections to not read the file again(I/O is so fuckin slower than cpu man)
+    for (const auto& raw : raw_connections) {
+        std::string ip = hexToIp(raw.ip_hex, raw.is_ipv6);
+        std::string state = stateToString(raw.state_hex);
         
         uint32_t uid_num = 0;
         try {
-            uid_num = std::stoul(uid);
+            uid_num = std::stoul(raw.uid);
         } catch (...) {
             continue;
         }
         
-        uint64_t inode_num = 0;
-        try {
-            inode_num = std::stoull(inode_str);
-        } catch (...) {
-            continue;
-        }
-        
-        // updated process_name retrieval
         std::string process = "unknown";
-        auto it = inode_to_process.find(inode_num);
+        auto it = inode_to_process.find(raw.inode);
         if (it != inode_to_process.end()) {
             process = it->second;
         }
         
-        connections.emplace_back(port, ip, state, uid_num, inode_num, process, is_ipv6);
+        connections.emplace_back(raw.port, ip, state, uid_num, raw.inode, process, raw.is_ipv6);
     }
     
-    file.close();
     return connections;
 }
 
