@@ -14,24 +14,59 @@ PortScanner::PortScanner() : cache_built(false) {
     last_cache_update = std::chrono::steady_clock::now();
 }
 
+
+//my original hexToIp sucked so i vibecoded a new one. God i need to read on this topic more......
 std::string PortScanner::hexToIp(const std::string& hex, bool is_ipv6) {
     if (is_ipv6) {
-        // IPv6: 32 symbols in hex
         if (hex.length() != 32) return "invalid";
         
-        std::string ipv6;
+        std::vector<std::string> groups;
         for (size_t i = 0; i < 32; i += 4) {
-            if (i > 0) ipv6 += ':';
-            ipv6 += hex.substr(i, 4);
+            std::string group = hex.substr(i, 4);
+            // Убираем ведущие нули
+            group = group.erase(0, group.find_first_not_of('0'));
+            if (group.empty()) group = "0";
+            groups.push_back(group);
         }
-        return ipv6;
+        
+        std::string result;
+        bool compressed = false;
+        bool in_zero_run = false;
+        
+        for (size_t i = 0; i < groups.size(); ++i) {
+            if (groups[i] == "0") {
+                if (!in_zero_run && !compressed) {
+                    in_zero_run = true;
+                    if (i == 0) {
+                        result = "::";
+                    } else {
+                        result += ":";
+                    }
+                    compressed = true;
+                }
+                while (i + 1 < groups.size() && groups[i + 1] == "0") {
+                    i++;
+                }
+            } else {
+                in_zero_run = false;
+                if (i > 0 && result.back() != ':' && !result.empty()) {
+                    result += ":";
+                }
+                result += groups[i];
+            }
+        }
+        
+        if (result.empty() || result == ":") {
+            result = "::";
+        }
+        
+        return "[" + result + "]";
     }
     
-    // IPv4: 8 symbols in hex (little-endian)
     if (hex.length() != 8) return "invalid";
     
     try {
-        uint32_t ip = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+        uint32_t ip = std::stoul(hex, nullptr, 16);
         unsigned char bytes[4];
         bytes[0] = (ip >> 0) & 0xFF;
         bytes[1] = (ip >> 8) & 0xFF;
