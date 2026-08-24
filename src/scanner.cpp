@@ -471,7 +471,14 @@ bool PortScanner::parseProcNetLine(const std::string& line,
     state = tokens[3];
     uid = tokens[8];
     inode = tokens.back();
-    
+
+    //SOMETIMES IPv6 may have broke ass inodes. too bad
+
+    if (inode == "0" || inode == "-1" || inode.empty()) {
+        inode = "0";
+    }
+
+
     return true;
 }
 
