@@ -18,15 +18,16 @@ std::string PortView::formatIp(const std::string& ip, bool is_ipv6) {
 void PortView::printTable(const std::vector<ConnectionInfo>& connections, 
                           const std::string& title) {
     if (connections.empty()) {
-        std::cout << "No connections found.\n";
+        std::cout << "\033[1;33mNo connections found.\033[0m\n";
         return;
     }
     
-    std::cout << "\n=== " << title << " ===\n";
+    std::cout << "\n\033[1;36m=== " << title << " ===\033[0m\n";
     printSeparator('=');
     
-    // Header
+    // cOlOrFuL HeAdEr
     std::cout << std::left 
+              << "\033[1;37m"
               << std::setw(25) << "Local IP"
               << std::setw(10) << "Port"
               << std::setw(14) << "State"
@@ -34,12 +35,26 @@ void PortView::printTable(const std::vector<ConnectionInfo>& connections,
               << std::setw(12) << "Inode"
               << std::setw(20) << "Process"
               << std::setw(8) << "IPv6"
+              << "\033[0m"
               << "\n";
     printSeparator('-');
     
-    // data
+    // cOlOrFuL dAtA
     for (const auto& conn : connections) {
-        std::cout << std::left
+        // color
+        std::string color;
+        if (conn.state == "LISTEN") {
+            color = "\033[1;32m";  // green for LISTEN
+        } else if (conn.state == "ESTABLISHED") {
+            color = "\033[1;34m";  // blue for ESTABLISHED
+        } else if (conn.state == "TIME_WAIT") {
+            color = "\033[1;33m";  // yellow for TIME_WAIT
+        } else {
+            color = "\033[0m";     // defaulto
+        }
+        
+        std::cout << color
+                  << std::left
                   << std::setw(25) << conn.local_ip
                   << std::setw(10) << conn.port
                   << std::setw(14) << conn.state
@@ -47,6 +62,7 @@ void PortView::printTable(const std::vector<ConnectionInfo>& connections,
                   << std::setw(12) << conn.inode
                   << std::setw(20) << conn.process_name
                   << std::setw(8) << (conn.is_ipv6 ? "yes" : "no")
+                  << "\033[0m"
                   << "\n";
     }
     printSeparator('-');
