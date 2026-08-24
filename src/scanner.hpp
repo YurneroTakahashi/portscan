@@ -17,7 +17,7 @@ private:
     std::string hexToIp(const std::string& hex, bool is_ipv6 = false);
     uint16_t hexToPort(const std::string& hex);
     std::string stateToString(const std::string& hex);
-    bool parseProcNetLine(std::string& line, 
+    bool parseProcNetLine(const std::string& line, 
                           std::string& local_addr,
                           std::string& remote_addr,
                           std::string& state,
@@ -25,6 +25,7 @@ private:
                           std::string& inode);
     
     void updateCacheForInodes(const std::vector<uint64_t>& inodes);
+    std::vector<ConnectionInfo> parseProtocolFile(const std::string &path, bool is_ipv6);
     std::string findProcessByInode(uint64_t inode);
     bool isCacheStale() const;
     void buildProcessCache(); 

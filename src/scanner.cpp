@@ -411,7 +411,7 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
     return connections;
 }
 
-bool PortScanner::parseProcNetLine(std::string& line, 
+bool PortScanner::parseProcNetLine(const std::string& line, 
                                    std::string& local_addr,
                                    std::string& remote_addr,
                                    std::string& state,
