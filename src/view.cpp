@@ -4,7 +4,7 @@
 #include <fstream>
 #include <algorithm>
 
-void PortView::printSeparator(char ch, int length) {
+void PortView::printSeparator(char ch, unsigned int length) {
     std::cout << std::string(length, ch) << "\n";
 }
 
@@ -69,7 +69,7 @@ void PortView::printTable(const std::vector<ConnectionInfo>& connections,
     std::cout << "Total: " << connections.size() << " connections\n";
 }
 
-void PortView::printAll(const std::vector<ConnectionInfo>& connections, bool show_process) {
+void PortView::printAll(const std::vector<ConnectionInfo>& connections) {
     printTable(connections, "All TCP Connections");
 }
 

@@ -66,12 +66,12 @@ std::string PortScanner::hexToIp(const std::string& hex, bool is_ipv6) {
     if (hex.length() != 8) return "invalid";
     
     try {
-        uint32_t ip = std::stoul(hex, nullptr, 16);
+        uint32_t ip = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
         unsigned char bytes[4];
         bytes[0] = (ip >> 0) & 0xFF;
         bytes[1] = (ip >> 8) & 0xFF;
         bytes[2] = (ip >> 16) & 0xFF;
-        bytes[3] = (ip >> 24) & 0xFF;
+        bytes[3] = static_cast<unsigned char>((ip >> 24) & 0xFF);
         
         std::ostringstream oss;
         oss << (int)bytes[0] << "." << (int)bytes[1] << "." 
@@ -411,7 +411,7 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         
         uint32_t uid_num = 0;
         try {
-            uid_num = std::stoul(raw.uid);
+            uid_num = static_cast<uint32_t>(std::stoul(raw.uid)); //if this shi breaks, im quitting CS
         } catch (...) {
             continue;
         }

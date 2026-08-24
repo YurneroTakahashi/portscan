@@ -115,13 +115,16 @@ void printHelp(const char* program_name) {
 
 std::string getCurrentTime() {
     auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm = *std::localtime(&time_t);
+    auto time_t1 = std::chrono::system_clock::to_time_t(now);
+    
+    std::tm tm; // localtime is not threadsafe, i guess localtime_r will do the trick
+    ::localtime_r(&time_t1, &tm); // idk what i'm doing, i just rode the cpp docs
     
     std::ostringstream oss;
     oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
     return oss.str();
 }
+
 
 std::vector<ConnectionInfo> applyFilters(const std::vector<ConnectionInfo>& connections, 
                                         const ProgramArgs& args) {

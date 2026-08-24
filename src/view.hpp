@@ -8,7 +8,7 @@
 
 class PortView {
 public:
-    void printAll(const std::vector<ConnectionInfo>& connections, bool show_process = true);
+    void printAll(const std::vector<ConnectionInfo>& connections);
     
     void printListening(const std::vector<ConnectionInfo>& connections);
     
@@ -23,7 +23,7 @@ public:
     
 private:
     std::string formatIp(const std::string& ip, bool is_ipv6);
-    void printSeparator(char ch = '-', int length = 80);
+    void printSeparator(char ch = '-', unsigned int length = 80);
 };
 
 #endif // VIEW_HPP
