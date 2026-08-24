@@ -8,8 +8,11 @@
 #include <cstring>
 #include <cctype>
 #include <algorithm>
+#include <set>
 
-PortScanner::PortScanner() : cache_built(false) {}
+PortScanner::PortScanner() : cache_built(false) {
+    last_cache_update = std::chrono::steady_clock::now();
+}
 
 std::string PortScanner::hexToIp(const std::string& hex, bool is_ipv6) {
     if (is_ipv6) {
@@ -135,7 +138,10 @@ std::string PortScanner::findProcessByInode(uint64_t inode) {
 }
 
 void PortScanner::buildProcessCache() {
-    if (cache_built) return;
+    // only make cache if first launch or empty
+    if (cache_built && !inode_to_process.empty()) {
+        return;
+    }
     
     inode_to_process.clear();
     
@@ -151,7 +157,7 @@ void PortScanner::buildProcessCache() {
         
         DIR* fd_dir = opendir(fd_path.c_str());
         if (!fd_dir) continue;
-
+        
         std::string comm_path = "/proc/" + pid + "/comm";
         std::ifstream comm_file(comm_path);
         std::string comm;
@@ -175,7 +181,6 @@ void PortScanner::buildProcessCache() {
                 buf[len] = '\0';
                 std::string link(buf);
                 
-                // look for socket:[inode]
                 size_t start = link.find("socket:[");
                 if (start != std::string::npos) {
                     size_t end = link.find(']', start);
@@ -193,6 +198,103 @@ void PortScanner::buildProcessCache() {
     }
     closedir(proc);
     cache_built = true;
+    last_cache_update = std::chrono::steady_clock::now();
+}
+
+
+void PortScanner::updateCacheForInodes(const std::vector<uint64_t>& inodes) {
+    if (inodes.empty()) return;
+    
+    // First, we check what cache we already have and what we don't
+    std::vector<uint64_t> missing_inodes;
+    for (uint64_t inode : inodes) {
+        if (inode_to_process.find(inode) == inode_to_process.end()) {
+            missing_inodes.push_back(inode);
+        }
+    }
+    
+    if (missing_inodes.empty()) {
+        return;
+    }
+    
+    std::set<uint64_t> missing_set(missing_inodes.begin(), missing_inodes.end());
+    
+    DIR* proc = opendir("/proc");
+    if (!proc) return;
+    
+    struct dirent* entry;
+    while ((entry = readdir(proc)) != nullptr) {
+        if (!isdigit(entry->d_name[0])) continue;
+        
+        std::string pid = entry->d_name;
+        std::string fd_path = "/proc/" + pid + "/fd";
+        
+        DIR* fd_dir = opendir(fd_path.c_str());
+        if (!fd_dir) continue;
+        
+        // process_name get read only once
+        std::string comm_path = "/proc/" + pid + "/comm";
+        std::ifstream comm_file(comm_path);
+        std::string comm;
+        if (std::getline(comm_file, comm)) {
+            if (!comm.empty() && comm.back() == '\n') {
+                comm.pop_back();
+            }
+        } else {
+            comm = "unknown";
+        }
+        
+        struct dirent* fd_entry;
+        while ((fd_entry = readdir(fd_dir)) != nullptr) {
+            if (fd_entry->d_name[0] == '.') continue;
+            
+            std::string link_path = fd_path + "/" + fd_entry->d_name;
+            char buf[256];
+            ssize_t len = readlink(link_path.c_str(), buf, sizeof(buf)-1);
+            
+            if (len > 0) {
+                buf[len] = '\0';
+                std::string link(buf);
+                
+                // search for socket:[inode]
+                size_t start = link.find("socket:[");
+                if (start != std::string::npos) {
+                    size_t end = link.find(']', start);
+                    if (end != std::string::npos) {
+                        std::string inode_str = link.substr(start + 8, end - start - 8);
+                        try {
+                            uint64_t inode_num = std::stoull(inode_str);
+                            
+                            // check if we even need that thang
+                            auto it = missing_set.find(inode_num);
+                            if (it != missing_set.end()) {
+                                inode_to_process[inode_num] = comm;
+                                missing_set.erase(it);
+                                
+                                if (missing_set.empty()) {
+                                    closedir(fd_dir);
+                                    closedir(proc);
+                                    cache_built = true;
+                                    last_cache_update = std::chrono::steady_clock::now();
+                                    return;
+                                }
+                            }
+                        } catch (...) {}
+                    }
+                }
+            }
+        }
+        closedir(fd_dir);
+    }
+    closedir(proc);
+    
+    // missed some inodes? "unknown" the fuckers
+    for (uint64_t inode : missing_set) {
+        inode_to_process[inode] = "unknown";
+    }
+    
+    cache_built = true;
+    last_cache_update = std::chrono::steady_clock::now();
 }
 
 std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& path, bool is_ipv6) {
@@ -204,12 +306,9 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         return connections;
     }
     
-    if (!cache_built) {
-        buildProcessCache();
-    }
-    
     std::string line;
     bool is_header = true;
+    std::vector<uint64_t> inodes_found;
     
     while (std::getline(file, line)) {
         if (is_header) {
@@ -219,10 +318,53 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         
         if (line.empty()) continue;
         
-        std::string local_addr, remote_addr, st, uid, inode;
+        std::string local_addr, remote_addr, st, uid, inode_str;
+        if (!parseProcNetLine(line, local_addr, remote_addr, st, uid, inode_str)) {
+            continue;
+        }
         
-        // adaptive parsing
-        if (!parseProcNetLine(line, local_addr, remote_addr, st, uid, inode)) {
+        size_t colon_pos = local_addr.find(':');
+        if (colon_pos == std::string::npos) continue;
+        
+        std::string ip_hex = local_addr.substr(0, colon_pos);
+        std::string port_hex = local_addr.substr(colon_pos + 1);
+        
+        if (is_ipv6 && ip_hex.length() != 32) continue;
+        if (!is_ipv6 && ip_hex.length() != 8) continue;
+        
+        uint16_t port = hexToPort(port_hex);
+        if (port == 0) continue;
+        
+        uint64_t inode_num = 0;
+        try {
+            inode_num = std::stoull(inode_str);
+        } catch (...) {
+            continue;
+        }
+        
+        inodes_found.push_back(inode_num);
+    }
+    
+    // Обновляем кэш ТОЛЬКО для найденных inode
+    if (!inodes_found.empty()) {
+        updateCacheForInodes(inodes_found);
+    }
+    
+    // Второй проход: собираем полную информацию
+    file.clear();
+    file.seekg(0, std::ios::beg);
+    is_header = true;
+    
+    while (std::getline(file, line)) {
+        if (is_header) {
+            is_header = false;
+            continue;
+        }
+        
+        if (line.empty()) continue;
+        
+        std::string local_addr, remote_addr, st, uid, inode_str;
+        if (!parseProcNetLine(line, local_addr, remote_addr, st, uid, inode_str)) {
             continue;
         }
         
@@ -250,12 +392,12 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
         
         uint64_t inode_num = 0;
         try {
-            inode_num = std::stoull(inode);
+            inode_num = std::stoull(inode_str);
         } catch (...) {
             continue;
         }
         
-        // get process name via cache
+        // updated process_name retrieval
         std::string process = "unknown";
         auto it = inode_to_process.find(inode_num);
         if (it != inode_to_process.end()) {
@@ -269,7 +411,7 @@ std::vector<ConnectionInfo> PortScanner::parseProtocolFile(const std::string& pa
     return connections;
 }
 
-bool PortScanner::parseProcNetLine(const std::string& line, 
+bool PortScanner::parseProcNetLine(std::string& line, 
                                    std::string& local_addr,
                                    std::string& remote_addr,
                                    std::string& state,
@@ -289,7 +431,7 @@ bool PortScanner::parseProcNetLine(const std::string& line,
     // min number os tokens(confirmed by kernel docs) 
     // sl, local_addr, remote_addr, st, tx_queue, rx_queue, 
     // tr, tm->when, retrnsmt, uid, timeout, inode
-    if (tokens.size() < 12) {
+    if (tokens.size() < 9) {//nine cuz of 8: uid
         return false;
     }
     
